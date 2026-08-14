@@ -1,8 +1,8 @@
-# bongoDev Incident Management Application
+# Incident Management Application
 
 ## DevOps Containerization Assignment
 
-Welcome to the bongoDev engineering team.
+Welcome to the engineering team.
 
 This repository contains a small three-tier incident-management application. The application is functionally complete, but it has not been prepared for container-based deployment. Your responsibility as the DevOps engineer is to design and implement a reliable Docker-based local runtime for the complete system.
 
@@ -115,17 +115,17 @@ You may add supporting files when justified, such as a web-server configuration,
 
 ### 4.1 Frontend
 
-| Item | Specification |
-|---|---|
-| Framework | React 18 |
-| Build tool | Vite 6 |
-| Language | JavaScript with JSX |
-| Package manager | npm |
-| Development command | `npm run dev` |
-| Production build command | `npm run build` |
-| Build output | `dist/` |
-| Development port | Vite default, normally `5173` |
-| API path used by browser | `/api/incidents` |
+| Item                     | Specification                 |
+| ------------------------ | ----------------------------- |
+| Framework                | React 18                      |
+| Build tool               | Vite 6                        |
+| Language                 | JavaScript with JSX           |
+| Package manager          | npm                           |
+| Development command      | `npm run dev`                 |
+| Production build command | `npm run build`               |
+| Build output             | `dist/`                       |
+| Development port         | Vite default, normally `5173` |
+| API path used by browser | `/api/incidents`              |
 
 The frontend uses relative API URLs such as:
 
@@ -164,17 +164,17 @@ A multi-stage build is strongly recommended.
 
 ### 4.2 Backend
 
-| Item | Specification |
-|---|---|
-| Runtime | Node.js |
-| Framework | Express 4 |
-| PostgreSQL client | `pg` |
-| Module system | ES modules |
-| Package manager | npm |
-| Production command | `npm start` |
-| Development command | `npm run dev` |
-| Default application port | `5000` |
-| Bind address | `0.0.0.0` |
+| Item                     | Specification |
+| ------------------------ | ------------- |
+| Runtime                  | Node.js       |
+| Framework                | Express 4     |
+| PostgreSQL client        | `pg`          |
+| Module system            | ES modules    |
+| Package manager          | npm           |
+| Production command       | `npm start`   |
+| Development command      | `npm run dev` |
+| Default application port | `5000`        |
+| Bind address             | `0.0.0.0`     |
 
 ### Backend package scripts
 
@@ -199,15 +199,15 @@ The backend also handles `SIGTERM` and `SIGINT` so database connections can be c
 
 ### Backend environment variables
 
-| Variable | Required purpose | Application default |
-|---|---|---|
-| `PORT` | Backend HTTP port | `5000` |
-| `DB_HOST` | PostgreSQL hostname | `localhost` |
-| `DB_PORT` | PostgreSQL port | `5432` |
-| `DB_NAME` | Database name | `incidentdb` |
-| `DB_USER` | Database user | `incident_user` |
-| `DB_PASSWORD` | Database password | `incident_password` |
-| `NODE_ENV` | Runtime environment | Not enforced by source |
+| Variable      | Required purpose    | Application default    |
+| ------------- | ------------------- | ---------------------- |
+| `PORT`        | Backend HTTP port   | `5000`                 |
+| `DB_HOST`     | PostgreSQL hostname | `localhost`            |
+| `DB_PORT`     | PostgreSQL port     | `5432`                 |
+| `DB_NAME`     | Database name       | `incidentdb`           |
+| `DB_USER`     | Database user       | `incident_user`        |
+| `DB_PASSWORD` | Database password   | `incident_password`    |
+| `NODE_ENV`    | Runtime environment | Not enforced by source |
 
 For a containerized environment, `DB_HOST` must refer to the database service through the Docker network. It must not use the host machine's `localhost` unless the database is intentionally running in the same container, which is not permitted for this assignment.
 
@@ -229,13 +229,13 @@ The backend image should:
 
 ### 4.3 Database
 
-| Item | Specification |
-|---|---|
-| Database engine | PostgreSQL |
-| Recommended major version | PostgreSQL 16 |
-| Internal port | `5432` |
-| Default database | `incidentdb` |
-| Default user | `incident_user` |
+| Item                      | Specification   |
+| ------------------------- | --------------- |
+| Database engine           | PostgreSQL      |
+| Recommended major version | PostgreSQL 16   |
+| Internal port             | `5432`          |
+| Default database          | `incidentdb`    |
+| Default user              | `incident_user` |
 
 Use an official PostgreSQL image rather than creating a custom database image unless you can justify the need.
 
@@ -245,15 +245,15 @@ The database must be configured through environment variables and must use persi
 
 The backend creates the following logical table:
 
-| Column | Type and behavior |
-|---|---|
-| `id` | Auto-incrementing primary key |
-| `title` | Required text, maximum 200 characters |
-| `description` | Text, defaults to empty string |
-| `severity` | `low`, `medium`, `high`, or `critical` |
-| `status` | `open`, `investigating`, or `resolved` |
-| `created_at` | Timestamp with time zone |
-| `updated_at` | Timestamp with time zone |
+| Column        | Type and behavior                      |
+| ------------- | -------------------------------------- |
+| `id`          | Auto-incrementing primary key          |
+| `title`       | Required text, maximum 200 characters  |
+| `description` | Text, defaults to empty string         |
+| `severity`    | `low`, `medium`, `high`, or `critical` |
+| `status`      | `open`, `investigating`, or `resolved` |
+| `created_at`  | Timestamp with time zone               |
+| `updated_at`  | Timestamp with time zone               |
 
 The database data must survive container replacement and normal `docker compose down` operations.
 
@@ -381,11 +381,11 @@ Only ports needed by the host should be published.
 
 Recommended host access:
 
-| Component | Suggested host port | Required exposure |
-|---|---:|---|
-| Frontend | `3000` | Yes |
-| Backend | `5000` | Optional but useful for testing |
-| PostgreSQL | `5432` | Not required for normal use |
+| Component  | Suggested host port | Required exposure               |
+| ---------- | ------------------: | ------------------------------- |
+| Frontend   |              `3000` | Yes                             |
+| Backend    |              `5000` | Optional but useful for testing |
+| PostgreSQL |              `5432` | Not required for normal use     |
 
 The database should remain private to the Compose network unless external access is explicitly required for debugging.
 
@@ -777,15 +777,15 @@ A DevOps engineer is expected to diagnose issues systematically rather than chan
 
 ## 12. Evaluation rubric
 
-| Area | Weight |
-|---|---:|
-| Functional Dockerfiles | 20% |
-| Compose orchestration | 20% |
-| Networking and configuration | 15% |
-| Health checks and startup reliability | 15% |
-| Persistence | 10% |
-| Security and image optimization | 10% |
-| Documentation and explanation | 10% |
+| Area                                  | Weight |
+| ------------------------------------- | -----: |
+| Functional Dockerfiles                |    20% |
+| Compose orchestration                 |    20% |
+| Networking and configuration          |    15% |
+| Health checks and startup reliability |    15% |
+| Persistence                           |    10% |
+| Security and image optimization       |    10% |
+| Documentation and explanation         |    10% |
 
 ### Bonus consideration
 
