@@ -26,6 +26,27 @@ After your work is complete, another engineer should be able to clone the reposi
 docker compose up --build
 ```
 
+### Quick start (Docker)
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Then open [http://localhost:3000](http://localhost:3000). The backend health endpoint is also available at [http://localhost:5000/health](http://localhost:5000/health).
+
+Useful commands:
+
+```bash
+docker compose up --build -d   # detached
+docker compose ps              # status / health
+docker compose logs -f         # follow logs
+docker compose down            # stop (keeps DB volume)
+docker compose down -v         # stop and delete DB data
+```
+
+Design decisions are documented in [DEVOPS_NOTES.md](DEVOPS_NOTES.md).
+
 The completed environment must provide:
 
 - A working browser-based frontend
@@ -382,10 +403,10 @@ Only ports needed by the host should be published.
 Recommended host access:
 
 | Component  | Suggested host port | Required exposure               |
-| ---------- | ------------------: | ------------------------------- |
-| Frontend   |              `3000` | Yes                             |
-| Backend    |              `5000` | Optional but useful for testing |
-| PostgreSQL |              `5432` | Not required for normal use     |
+| ---------- | ------------------- | ------------------------------- |
+| Frontend   | `3000`              | Yes                             |
+| Backend    | `5000`              | Optional but useful for testing |
+| PostgreSQL | `5432`              | Not required for normal use     |
 
 The database should remain private to the Compose network unless external access is explicitly required for debugging.
 
@@ -728,36 +749,33 @@ A DevOps engineer is expected to diagnose issues systematically rather than chan
 
 1. Validate the Compose model:
 
-   ```bash
-   docker compose config
-   ```
+```bash
+ docker compose config
+```
 
 2. Check container state:
 
-   ```bash
-   docker compose ps
-   ```
+```bash
+ docker compose ps
+```
 
 3. Read service logs:
 
-   ```bash
-   docker compose logs backend
-   docker compose logs database
-   docker compose logs frontend
-   ```
+```bash
+ docker compose logs backend
+ docker compose logs database
+ docker compose logs frontend
+```
 
 4. Inspect environment variables inside a service:
 
-   ```bash
-   docker compose exec backend env
-   ```
+```bash
+ docker compose exec backend env
+```
 
 5. Verify DNS and service connectivity from inside the relevant container.
-
 6. Verify that the process listens on `0.0.0.0`, not only `127.0.0.1`.
-
 7. Confirm the internal container port and published host port are not being confused.
-
 8. Confirm PostgreSQL data permissions and the volume mount path.
 
 ### Common conceptual errors
@@ -778,14 +796,14 @@ A DevOps engineer is expected to diagnose issues systematically rather than chan
 ## 12. Evaluation rubric
 
 | Area                                  | Weight |
-| ------------------------------------- | -----: |
-| Functional Dockerfiles                |    20% |
-| Compose orchestration                 |    20% |
-| Networking and configuration          |    15% |
-| Health checks and startup reliability |    15% |
-| Persistence                           |    10% |
-| Security and image optimization       |    10% |
-| Documentation and explanation         |    10% |
+| ------------------------------------- | ------ |
+| Functional Dockerfiles                | 20%    |
+| Compose orchestration                 | 20%    |
+| Networking and configuration          | 15%    |
+| Health checks and startup reliability | 15%    |
+| Persistence                           | 10%    |
+| Security and image optimization       | 10%    |
+| Documentation and explanation         | 10%    |
 
 ### Bonus consideration
 
