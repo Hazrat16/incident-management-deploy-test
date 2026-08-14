@@ -61,3 +61,165 @@ In a real production environment, secrets would typically come from a secrets ma
 - No resource limits or Compose profiles yet (optional: Adminer under a profile, CPU/memory limits)
 - No CI pipeline or image vulnerability scanning yet (optional: GitHub Actions + Trivy)
 - No lockfiles in the repo, so `npm install` is used instead of `npm ci`; adding lockfiles would improve build reproducibility
+
+## Deploy to AWS EC2 (new machine checklist)
+
+This section is enough to take a fresh Ubuntu EC2 instance from zero to a running app.
+
+### 1. Launch the instance (AWS console)
+
+- AMI: Ubuntu 22.04 or 24.04 LTS
+- Instance size: `t3.small` (or larger)
+- Security group inbound rules:
+  - TCP `22` from your IP (SSH)
+  - TCP `3000` from `0.0.0.0/0` (or restrict to your IP while learning)
+- Optional: Elastic IP for a stable public address
+
+Do **not** open PostgreSQL (`5432`) to the internet. Backend port `5000` is optional and better left closed publicly; the UI reaches the API through nginx on port `3000`.
+
+### 2. SSH into the instance
+
+```bash
+ssh -i your-key.pem ubuntu@YOUR_EC2_PUBLIC_IP
+```
+
+### 3. Install Docker Engine and Compose plugin
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl git
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+sudo usermod -aG docker ubuntu
+```
+
+Log out and SSH back in (or run `newgrp docker`) so the group membership applies.
+
+```bash
+newgrp docker
+docker --version
+docker compose version
+```
+
+### 4. Start the Docker daemon (if needed)
+
+If you see:
+
+```text
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+```
+
+run:
+
+```bash
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo systemctl status docker --no-pager
+docker ps
+```
+
+Quick workaround while debugging permissions:
+
+```bash
+sudo docker compose up --build -d
+```
+
+Prefer fixing the service + `docker` group so you do not need `sudo` every time.
+
+If `systemctl start docker` fails:
+
+```bash
+sudo journalctl -u docker --no-pager -n 50
+```
+
+### 5. Get the project onto the server
+
+**Option A — clone from Git:**
+
+```bash
+git clone https://github.com/YOUR_USER/YOUR_REPO.git
+cd YOUR_REPO
+```
+
+**Option B — copy from your laptop:**
+
+```bash
+# on your laptop
+scp -i your-key.pem -r /path/to/incident-management ubuntu@YOUR_EC2_PUBLIC_IP:~/
+```
+
+Then on the EC2 instance:
+
+```bash
+cd ~/incident-management
+```
+
+### 6. Configure environment
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Use a strong password on EC2. Example:
+
+```env
+POSTGRES_DB=incidentdb
+POSTGRES_USER=incident_user
+POSTGRES_PASSWORD=use_a_long_random_password_here
+BACKEND_PORT=5000
+FRONTEND_PORT=3000
+```
+
+Do not commit `.env`. Changing `POSTGRES_USER` / `POSTGRES_PASSWORD` after the database volume already exists requires recreating the volume (`docker compose down -v`) or the old role/password remains.
+
+### 7. Build and start
+
+```bash
+docker compose up --build -d
+docker compose ps
+docker compose logs -f
+```
+
+Wait until `database`, `backend`, and `frontend` are healthy.
+
+### 8. Verify
+
+On the instance:
+
+```bash
+curl http://127.0.0.1:5000/health
+curl http://127.0.0.1:3000/api/incidents
+```
+
+In a browser:
+
+```text
+http://YOUR_EC2_PUBLIC_IP:3000
+```
+
+### 9. Day-2 operations
+
+```bash
+docker compose ps
+docker compose logs -f backend
+docker compose restart
+docker compose down              # stop containers; keep DB volume
+docker compose down -v          # stop and delete DB data
+docker compose up --build -d    # rebuild after code changes
+```
+
+### Notes for this deployment style
+
+- The app listens on host port **3000** (`FRONTEND_PORT` → container `80`). To serve on port 80 instead, open `80` in the security group and set `FRONTEND_PORT=80` in `.env`.
+- This is a training-friendly Compose deploy on one VM. Production hardening would add HTTPS (Caddy/nginx + Let’s Encrypt or an ALB), managed secrets, backups, and preferably a managed database (RDS) instead of Postgres on the same instance.
