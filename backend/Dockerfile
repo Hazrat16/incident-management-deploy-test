@@ -9,6 +9,9 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
+# Pick up Alpine security fixes (e.g. openssl/libssl3)
+RUN apk update && apk upgrade --no-cache
+
 COPY --from=deps --chown=node:node /app/node_modules ./node_modules
 COPY --chown=node:node package.json ./
 COPY --chown=node:node src ./src
