@@ -20,6 +20,8 @@ function App() {
     [incidents],
   );
 
+  const resolvedCount = incidents.length - openCount;
+
   async function loadIncidents() {
     try {
       setError('');
@@ -97,13 +99,21 @@ function App() {
     <main className="page-shell">
       <header className="hero">
         <div>
-          <p className="eyebrow">Docker Practice Lab</p>
+          <p className="eyebrow">Live status board</p>
           <h1>Incident Command Center</h1>
-          <p>React frontend · Express API · PostgreSQL database</p>
+          <p className="hero-subtitle">
+            Track, triage and resolve outages across your services.
+          </p>
         </div>
-        <div className="summary-card">
-          <strong>{openCount}</strong>
-          <span>active incidents</span>
+        <div className="stat-row">
+          <div className="stat-card is-primary">
+            <strong>{openCount}</strong>
+            <span>Active</span>
+          </div>
+          <div className="stat-card">
+            <strong>{resolvedCount}</strong>
+            <span>Resolved</span>
+          </div>
         </div>
       </header>
 
@@ -111,28 +121,31 @@ function App() {
 
       <section className="grid">
         <form className="panel" onSubmit={createIncident}>
-          <h2>Create incident</h2>
+          <h2>Report an incident</h2>
+          <p className="panel-hint">
+            Capture what broke while the details are still fresh.
+          </p>
 
           <label>
-            Title
+            Incident title
             <input
               required
               minLength="3"
               value={form.title}
               onChange={(event) => setForm({ ...form, title: event.target.value })}
-              placeholder="Example: Checkout API unavailable"
+              placeholder="Checkout API returning 503s"
             />
           </label>
 
           <label>
-            Description
+            Impact &amp; symptoms
             <textarea
               rows="4"
               value={form.description}
               onChange={(event) =>
                 setForm({ ...form, description: event.target.value })
               }
-              placeholder="Describe impact and current symptoms"
+              placeholder="Who is affected, what are you seeing, and since when?"
             />
           </label>
 
@@ -144,28 +157,30 @@ function App() {
                 setForm({ ...form, severity: event.target.value })
               }
             >
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="critical">Critical</option>
+              <option value="low">Low · minor annoyance</option>
+              <option value="medium">Medium · degraded service</option>
+              <option value="high">High · major feature down</option>
+              <option value="critical">Critical · full outage</option>
             </select>
           </label>
 
-          <button disabled={saving}>{saving ? 'Creating…' : 'Create incident'}</button>
+          <button className="submit-button" disabled={saving}>
+            {saving ? 'Reporting…' : 'Report incident'}
+          </button>
         </form>
 
         <section className="panel incidents-panel">
           <div className="panel-heading">
-            <h2>Current incidents</h2>
+            <h2>Incident feed</h2>
             <button className="secondary" type="button" onClick={loadIncidents}>
-              Refresh
+              Refresh feed
             </button>
           </div>
 
           {loading ? (
-            <p>Loading incidents…</p>
+            <p className="empty-state">Loading the incident feed…</p>
           ) : incidents.length === 0 ? (
-            <p>No incidents found.</p>
+            <p className="empty-state">All clear. Nothing is on fire right now.</p>
           ) : (
             <div className="incident-list">
               {incidents.map((incident) => (
@@ -185,9 +200,11 @@ function App() {
                       Delete
                     </button>
                   </div>
-                  <p>{incident.description || 'No description provided.'}</p>
+                  <p>{incident.description || 'No details were provided.'}</p>
                   <div className="incident-footer">
                     <select
+                      className={`status-select ${incident.status}`}
+                      aria-label={`Status for ${incident.title}`}
                       value={incident.status}
                       onChange={(event) =>
                         changeStatus(incident.id, event.target.value)
