@@ -58,6 +58,7 @@ In a real production environment, secrets would typically come from a secrets ma
 ## Limitations and future improvements
 
 - Images are built in GitHub Actions and stored on Docker Hub; EC2 pulls them when `DOCKERHUB_USERNAME` is set in `.env`
+- Backend runtime image removes `npm`/`npx` and runs `node src/server.js` directly; `overrides.tar` pins CVE-2026-59873
 - No resource limits or Compose profiles yet (optional: Adminer under a profile, CPU/memory limits)
 - No lockfiles in the repo, so `npm install` is used instead of `npm ci`; adding lockfiles would improve build reproducibility
 - No TLS termination in this local lab (suitable for training, not public production)
@@ -342,10 +343,10 @@ Config file: [`sonar-project.properties`](sonar-project.properties)
 
 | Variable | Required | Purpose |
 | -------- | -------- | ------- |
-| `SONAR_ORGANIZATION` | Recommended | SonarCloud org key (defaults to GitHub owner login if unset) |
+| `SONAR_ORGANIZATION` | Recommended | SonarCloud org key — usually **lowercase** (e.g. `hazrat16`). Defaults to lowercased GitHub owner if unset |
 | `SONAR_PROJECT_KEY` | Recommended | Must match the SonarCloud project key (defaults to `Owner_repo`) |
 
-If organization/project key casing does not match SonarCloud exactly, set the variables explicitly.
+Find the exact org key in SonarCloud: open your org → check the URL (`https://sonarcloud.io/organizations/<org-key>/...`) or **Organization settings**. It is case-sensitive; `Hazrat16` is not the same as `hazrat16`.
 
 ### One-time GitHub secrets (deploy)
 

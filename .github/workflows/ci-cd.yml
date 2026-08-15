@@ -138,7 +138,9 @@ jobs:
 
           DEFAULT_KEY="${GITHUB_REPOSITORY/\//_}"
           PROJECT_KEY="${SONAR_PROJECT_KEY:-$DEFAULT_KEY}"
-          ORG="${SONAR_ORGANIZATION:-${GITHUB_REPOSITORY_OWNER}}"
+          # SonarCloud organization keys are usually lowercase and case-sensitive.
+          DEFAULT_ORG="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          ORG="${SONAR_ORGANIZATION:-$DEFAULT_ORG}"
 
           echo "project_key=${PROJECT_KEY}" >> "$GITHUB_OUTPUT"
           echo "organization=${ORG}" >> "$GITHUB_OUTPUT"
