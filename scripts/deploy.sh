@@ -18,13 +18,10 @@ if [[ ! -f .env ]]; then
 fi
 
 # Load DOCKERHUB_USERNAME / IMAGE_TAG for compose image names.
-# IMAGE_TAG already set in the environment (e.g. by CI) wins over .env
-PRESET_IMAGE_TAG="${IMAGE_TAG:-}"
 set -a
 # shellcheck disable=SC1091
 source .env
 set +a
-IMAGE_TAG="${PRESET_IMAGE_TAG:-${IMAGE_TAG:-latest}}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "==> Docker not found — running scripts/setup-ec2.sh to install prerequisites"

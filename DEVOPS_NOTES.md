@@ -248,29 +248,35 @@ docker compose up --build -d    # rebuild after code changes
 - The app listens on host port **3000** (`FRONTEND_PORT` → container `80`). To serve on port 80 instead, open `80` in the security group and set `FRONTEND_PORT=80` in `.env`.
 - This is a training-friendly Compose deploy on one VM. Production hardening would add HTTPS (Caddy/nginx + Let’s Encrypt or an ALB), managed secrets, backups, and preferably a managed database (RDS) instead of Postgres on the same instance.
 
-## CI/CD with GitHub Actions (industry-shaped)
+## CI/CD with GitHub Actions (build + deploy to EC2)
 
 Pipeline file: [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)
 
 ```text
-pull_request → ci (build + Trivy) + sonar                    # no deploy
-push main    → ci (build + Trivy + push sha/latest) + sonar
-             → deploy EC2 with IMAGE_TAG=<git-sha>
+push/PR to main
+  --> build: Compose validate + image build + Trivy scan
+      (on push to main) push images to Docker Hub (:latest + :sha)
+  --> sonar: SonarCloud / SonarQube analysis
+push to main (after build + sonar succeed)
+  --> SSH into EC2 --> git sync --> scripts/deploy.sh
+      (pull from Docker Hub when DOCKERHUB_USERNAME is set)
 ```
 
-| Job | When | Purpose |
-| --- | ---- | ------- |
-| `ci` | PR + `main` | Validate, **build once**, Trivy; on `main` also push `:sha` + `:latest` |
-| `sonar` | PR + `main` | SonarCloud quality analysis |
-| `deploy` | `main` only after `ci` + `sonar` | SSH → pull **that sha** → health checks |
+### What the workflow does
 
-Guardrails this matches:
+| Event | Job | Behavior |
+| ----- | --- | -------- |
+| Pull request / push to `main` | `build` | `docker compose config`, `docker compose build`, **Trivy** image scans |
+| Push to `main` only | `push-images` | Login to Docker Hub and push `:latest` + `:<git-sha>` (uses `incident-management` environment secrets) |
+| Pull request / push to `main` | `sonar` | **SonarQube/SonarCloud** static analysis |
+| Push to `main` | `deploy` | Runs after `build`, `push-images`, and `sonar`; SSH deploy to EC2 |
 
-- CI on every PR; CD only from `main`
-- Build once on `main`, then push the scanned images (no second rebuild job)
-- EC2 pulls the immutable SHA (not “whatever latest happens to be” alone)
-- Protected GitHub Environment `incident-management` for Hub + EC2 secrets
-- Sonar + Trivy as gates before deploy
+Deploy steps on EC2:
+
+1. `git fetch` + `git reset --hard origin/main`
+2. Run [`scripts/deploy.sh`](scripts/deploy.sh):
+   - If `.env` has `DOCKERHUB_USERNAME` → `docker compose pull` + `up -d --no-build`
+   - Otherwise → `docker compose up --build -d` (local build fallback)
 
 ### Trivy (container vulnerability scanning)
 
@@ -342,19 +348,7 @@ Config file: [`sonar-project.properties`](sonar-project.properties)
 | `SONAR_ORGANIZATION` | Recommended | SonarCloud org key — usually **lowercase** (e.g. `hazrat16`). Defaults to lowercased GitHub owner if unset |
 | `SONAR_PROJECT_KEY` | Recommended | Must match the SonarCloud project key (defaults to `Owner_repo`) |
 
-If organization/project key casing does not match SonarCloud exactly, set the variables explicitly.
-
 Find the exact org key in SonarCloud: open your org → check the URL (`https://sonarcloud.io/organizations/<org-key>/...`) or **Organization settings**. It is case-sensitive; `Hazrat16` is not the same as `hazrat16`.
-
-**If CI fails with:** `You are running CI analysis while Automatic Analysis is enabled`
-
-SonarCloud only allows one analysis mode. Disable Automatic Analysis for this project:
-
-1. Open the project on SonarCloud  
-2. **Administration → Analysis Method** (or **Project Settings → Analysis Method**)  
-3. Turn **off** Automatic Analysis  
-4. Keep **CI-based analysis** / GitHub Actions as the method  
-5. Re-run the workflow  
 
 ### One-time GitHub secrets (deploy)
 
