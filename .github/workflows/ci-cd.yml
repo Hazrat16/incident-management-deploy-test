@@ -1,222 +1,140 @@
+# Industry-shaped pipeline:
+# - PRs: CI only (build + Trivy + Sonar) — never deploys
+# - main: build once → scan → push immutable tag → deploy that tag
 name: CI/CD
 
 on:
-  push:
-    branches: [main]
   pull_request:
+    branches: [main]
+  push:
     branches: [main]
 
 concurrency:
-  group: ci-cd-${{ github.ref }}
+  group: ci-cd-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   COMPOSE_PROJECT_NAME: incident-management
-  IMAGE_TAG: latest
 
 jobs:
-  build:
-    name: Validate, build, Trivy, and push
+  ci:
+    name: Build and scan
     runs-on: ubuntu-latest
+    # Uses environment secrets (DOCKERHUB_*). Keep protection rules on deploy-only
+    # if you add required reviewers later (or split envs: staging vs production).
+    environment: incident-management
     permissions:
       contents: read
-      security-events: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set image namespace
-        id: image
+      - name: Image metadata
+        id: meta
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
-          USERNAME="${DOCKERHUB_USERNAME:-local}"
-          echo "username=${USERNAME}" >> "$GITHUB_OUTPUT"
-          echo "backend=${USERNAME}/incident-management-backend:latest" >> "$GITHUB_OUTPUT"
-          echo "frontend=${USERNAME}/incident-management-frontend:latest" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ -n "${DOCKERHUB_USERNAME}" ]; then
+            USERNAME="${DOCKERHUB_USERNAME}"
+            TAG="${GITHUB_SHA}"
+          else
+            # PRs: no registry publish; local name is fine for scanning
+            USERNAME="${DOCKERHUB_USERNAME:-ci}"
+            TAG="pr-${{ github.event.pull_request.number || github.run_id }}"
+          fi
+          {
+            echo "dockerhub_username=${USERNAME}"
+            echo "image_tag=${TAG}"
+            echo "backend=${USERNAME}/incident-management-backend:${TAG}"
+            echo "frontend=${USERNAME}/incident-management-frontend:${TAG}"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Validate Compose file
+      - name: Validate Compose
         env:
-          DOCKERHUB_USERNAME: ${{ steps.image.outputs.username }}
-        run: docker compose config
+          DOCKERHUB_USERNAME: ${{ steps.meta.outputs.dockerhub_username }}
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+        run: docker compose config -q
 
       - name: Build images
         env:
-          DOCKERHUB_USERNAME: ${{ steps.image.outputs.username }}
-          IMAGE_TAG: latest
+          DOCKERHUB_USERNAME: ${{ steps.meta.outputs.dockerhub_username }}
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
         run: docker compose build
 
-      - name: Trivy scan backend image
+      - name: Trivy — backend
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ steps.image.outputs.backend }}
+          image-ref: ${{ steps.meta.outputs.backend }}
           format: table
           exit-code: "1"
           severity: CRITICAL
           ignore-unfixed: true
 
-      - name: Trivy scan frontend image
+      - name: Trivy — frontend
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ steps.image.outputs.frontend }}
+          image-ref: ${{ steps.meta.outputs.frontend }}
           format: table
           exit-code: "1"
           severity: CRITICAL
           ignore-unfixed: true
-
-      - name: Trivy SARIF (backend)
-        if: always()
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: ${{ steps.image.outputs.backend }}
-          format: sarif
-          output: trivy-backend.sarif
-          severity: CRITICAL,HIGH,MEDIUM
-          ignore-unfixed: true
-
-      - name: Upload Trivy SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        continue-on-error: true
-        with:
-          sarif_file: trivy-backend.sarif
-          category: trivy-backend
-
-  push-images:
-    name: Push images to Docker Hub
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    # Same environment as deploy so DOCKERHUB_* secrets there are visible
-    environment: incident-management
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Check Docker Hub secrets
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: |
-          missing=0
-          for name in DOCKERHUB_USERNAME DOCKERHUB_TOKEN; do
-            if [ -z "${!name}" ]; then
-              echo "Missing secret: $name"
-              missing=1
-            else
-              echo "Found secret: $name"
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            echo "::error::Add DOCKERHUB_USERNAME and DOCKERHUB_TOKEN to the 'incident-management' environment secrets (Settings → Environments → incident-management), or as repository secrets and keep this job's environment."
-            exit 1
-          fi
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push images
+      - name: Push immutable sha + latest
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          IMAGE_TAG: latest
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker compose build
           docker compose push
-
-          docker tag "${DOCKERHUB_USERNAME}/incident-management-backend:latest" \
-            "${DOCKERHUB_USERNAME}/incident-management-backend:${GITHUB_SHA}"
-          docker tag "${DOCKERHUB_USERNAME}/incident-management-frontend:latest" \
-            "${DOCKERHUB_USERNAME}/incident-management-frontend:${GITHUB_SHA}"
-          docker push "${DOCKERHUB_USERNAME}/incident-management-backend:${GITHUB_SHA}"
-          docker push "${DOCKERHUB_USERNAME}/incident-management-frontend:${GITHUB_SHA}"
-
-          echo "Pushed:"
-          echo "  ${DOCKERHUB_USERNAME}/incident-management-backend:latest"
-          echo "  ${DOCKERHUB_USERNAME}/incident-management-backend:${GITHUB_SHA}"
-          echo "  ${DOCKERHUB_USERNAME}/incident-management-frontend:latest"
-          echo "  ${DOCKERHUB_USERNAME}/incident-management-frontend:${GITHUB_SHA}"
+          docker tag "${DOCKERHUB_USERNAME}/incident-management-backend:${IMAGE_TAG}" \
+            "${DOCKERHUB_USERNAME}/incident-management-backend:latest"
+          docker tag "${DOCKERHUB_USERNAME}/incident-management-frontend:${IMAGE_TAG}" \
+            "${DOCKERHUB_USERNAME}/incident-management-frontend:latest"
+          docker push "${DOCKERHUB_USERNAME}/incident-management-backend:latest"
+          docker push "${DOCKERHUB_USERNAME}/incident-management-frontend:latest"
 
   sonar:
-    name: SonarQube / SonarCloud analysis
+    name: SonarCloud
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Check Sonar configuration
-        id: sonar_config
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
-          SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
-        run: |
-          if [ -z "$SONAR_TOKEN" ]; then
-            echo "::error::Missing secret SONAR_TOKEN. Create a token in SonarCloud (or SonarQube) and add it under Actions secrets."
-            exit 1
-          fi
-
-          DEFAULT_KEY="${GITHUB_REPOSITORY/\//_}"
-          PROJECT_KEY="${SONAR_PROJECT_KEY:-$DEFAULT_KEY}"
-          # SonarCloud organization keys are usually lowercase and case-sensitive.
-          DEFAULT_ORG="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
-          ORG="${SONAR_ORGANIZATION:-$DEFAULT_ORG}"
-
-          echo "project_key=${PROJECT_KEY}" >> "$GITHUB_OUTPUT"
-          echo "organization=${ORG}" >> "$GITHUB_OUTPUT"
-          echo "Using sonar.projectKey=${PROJECT_KEY}"
-          echo "Using sonar.organization=${ORG}"
-
-      - name: SonarQube Scan
+      - name: Analyze
         uses: SonarSource/sonarqube-scan-action@v5.3.1
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          # Default to SonarCloud. For self-hosted SonarQube, set secret SONAR_HOST_URL.
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || 'https://sonarcloud.io' }}
+          SONAR_HOST_URL: https://sonarcloud.io
         with:
           args: >
-            -Dsonar.projectKey=${{ steps.sonar_config.outputs.project_key }}
-            -Dsonar.organization=${{ steps.sonar_config.outputs.organization }}
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY || format('{0}_{1}', github.repository_owner, github.event.repository.name) }}
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION || 'hazrat16' }}
 
   deploy:
     name: Deploy to EC2
-    needs: [build, push-images, sonar]
+    needs: [ci, sonar]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: incident-management
     steps:
-      - name: Check required secrets
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-          EC2_APP_DIR: ${{ secrets.EC2_APP_DIR }}
-        run: |
-          missing=0
-          for name in EC2_HOST EC2_USER EC2_SSH_KEY EC2_APP_DIR; do
-            if [ -z "${!name}" ]; then
-              echo "Missing GitHub Actions secret: $name"
-              missing=1
-            else
-              echo "Found secret: $name"
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            echo "::error::Add the missing secrets under Settings → Secrets and variables → Actions"
-            exit 1
-          fi
-
-      - name: Deploy over SSH
+      - name: Deploy scanned image tag over SSH
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
           script_stop: true
           command_timeout: 20m
           script: |
@@ -225,4 +143,4 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             chmod +x scripts/deploy.sh
-            ./scripts/deploy.sh
+            IMAGE_TAG="${{ github.sha }}" ./scripts/deploy.sh
