@@ -2,6 +2,9 @@
 # Run on the EC2 host from the app directory after git has been updated.
 set -euo pipefail
 
+# Non-interactive SSH sessions often have a minimal PATH.
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+
 echo "==> Working directory: $(pwd)"
 
 if [[ ! -f .env ]]; then
@@ -14,13 +17,37 @@ if [[ ! -f .env ]]; then
   cp .env.example .env
 fi
 
+if ! command -v docker >/dev/null 2>&1; then
+  echo "==> Docker not found — running scripts/setup-ec2.sh to install prerequisites"
+  chmod +x scripts/setup-ec2.sh
+  ./scripts/setup-ec2.sh
+fi
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker is still not available after setup. Install it manually, then re-run deploy."
+  exit 1
+fi
+
+run_docker() {
+  if docker info >/dev/null 2>&1; then
+    "$@"
+  elif command -v sg >/dev/null 2>&1 && id -nG 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
+    local quoted
+    printf -v quoted '%q ' "$@"
+    sg docker -c "$quoted"
+  else
+    # GitHub Actions SSH sessions often lack the docker group even after usermod.
+    sudo "$@"
+  fi
+}
+
 echo "==> Building and starting stack"
-docker compose up --build -d
+run_docker docker compose up --build -d
 
 echo "==> Waiting for containers to report healthy"
 deadline=$((SECONDS + 180))
 while (( SECONDS < deadline )); do
-  mapfile -t statuses < <(docker compose ps --format '{{.Health}}' 2>/dev/null || true)
+  mapfile -t statuses < <(run_docker docker compose ps --format '{{.Health}}' 2>/dev/null || true)
   if ((${#statuses[@]} == 0)); then
     sleep 5
     continue
@@ -42,7 +69,7 @@ while (( SECONDS < deadline )); do
 done
 
 echo "==> Service status"
-docker compose ps
+run_docker docker compose ps
 
 echo "==> Health checks"
 curl -fsS "http://127.0.0.1:5000/health"

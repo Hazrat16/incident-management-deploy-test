@@ -348,6 +348,7 @@ Browser: `http://YOUR_EC2_PUBLIC_IP:3000`
 | Permission denied (publickey) | Wrong `EC2_SSH_KEY` / user, or key not in `~/.ssh/authorized_keys` |
 | `cd: No such file or directory` | `EC2_APP_DIR` does not match the real path on the instance |
 | `git fetch` fails | EC2 cannot authenticate to GitHub (private repo / no deploy key) |
+| `docker: command not found` | Docker not installed on EC2, or non-interactive SSH PATH. `deploy.sh` now runs `setup-ec2.sh` when Docker is missing, and uses `sudo` when the session is not in the `docker` group |
 | Missing `.env` | Fixed in `deploy.sh` (copies from `.env.example`). Or create once: `cp .env.example .env` on EC2 |
 | Build works, site old | Deploy failed after build — check the `deploy` job logs |
 
