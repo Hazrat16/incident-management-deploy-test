@@ -267,9 +267,9 @@ push to main (after build + sonar succeed)
 | Event | Job | Behavior |
 | ----- | --- | -------- |
 | Pull request / push to `main` | `build` | `docker compose config`, `docker compose build`, **Trivy** image scans |
-| Push to `main` only | `build` (push step) | Push backend/frontend images to **Docker Hub** as `:latest` and `:<git-sha>` |
+| Push to `main` only | `push-images` | Login to Docker Hub and push `:latest` + `:<git-sha>` (uses `incident-management` environment secrets) |
 | Pull request / push to `main` | `sonar` | **SonarQube/SonarCloud** static analysis |
-| Push to `main` | `deploy` | Runs only after `build` **and** `sonar` succeed; SSH deploy to EC2 |
+| Push to `main` | `deploy` | Runs after `build`, `push-images`, and `sonar`; SSH deploy to EC2 |
 
 Deploy steps on EC2:
 
@@ -305,12 +305,14 @@ CI tags and pushes:
 
 1. Create a Docker Hub account and (optional) make the two repositories, or allow CI to create them on first push.
 2. Create an Access Token: Docker Hub → Account Settings → Personal access tokens.
-3. Add **repository** secrets (or environment secrets if you also bind the build job later):
+3. Add these secrets to the **`incident-management` environment** (Settings → Environments → incident-management), matching how EC2 secrets are stored:
 
 | Secret | Purpose |
 | ------ | ------- |
 | `DOCKERHUB_USERNAME` | Your Docker Hub username (also used as the image namespace) |
 | `DOCKERHUB_TOKEN` | Access token (prefer token over account password) |
+
+The `push-images` job uses `environment: incident-management`, so repository-only secrets are not enough unless you also duplicate them there.
 
 4. On the EC2 `.env`, set the same username so deploy pulls the right images:
 

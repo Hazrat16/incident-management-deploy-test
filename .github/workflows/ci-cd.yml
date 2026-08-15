@@ -82,26 +82,50 @@ jobs:
           sarif_file: trivy-backend.sarif
           category: trivy-backend
 
+  push-images:
+    name: Push images to Docker Hub
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Same environment as deploy so DOCKERHUB_* secrets there are visible
+    environment: incident-management
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Docker Hub secrets
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          missing=0
+          for name in DOCKERHUB_USERNAME DOCKERHUB_TOKEN; do
+            if [ -z "${!name}" ]; then
+              echo "Missing secret: $name"
+              missing=1
+            else
+              echo "Found secret: $name"
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::Add DOCKERHUB_USERNAME and DOCKERHUB_TOKEN to the 'incident-management' environment secrets (Settings → Environments → incident-management), or as repository secrets and keep this job's environment."
+            exit 1
+          fi
+
       - name: Log in to Docker Hub
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Push images to Docker Hub
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Build and push images
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          IMAGE_TAG: latest
         run: |
-          if [ -z "$DOCKERHUB_USERNAME" ]; then
-            echo "::error::Missing secret DOCKERHUB_USERNAME (and DOCKERHUB_TOKEN) for Docker Hub push"
-            exit 1
-          fi
-
+          docker compose build
           docker compose push
 
-          # Also keep an immutable commit tag alongside latest
           docker tag "${DOCKERHUB_USERNAME}/incident-management-backend:latest" \
             "${DOCKERHUB_USERNAME}/incident-management-backend:${GITHUB_SHA}"
           docker tag "${DOCKERHUB_USERNAME}/incident-management-frontend:latest" \
@@ -160,7 +184,7 @@ jobs:
 
   deploy:
     name: Deploy to EC2
-    needs: [build, sonar]
+    needs: [build, push-images, sonar]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: incident-management
