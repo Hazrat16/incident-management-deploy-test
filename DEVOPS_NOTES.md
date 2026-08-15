@@ -348,7 +348,7 @@ Browser: `http://YOUR_EC2_PUBLIC_IP:3000`
 | Permission denied (publickey) | Wrong `EC2_SSH_KEY` / user, or key not in `~/.ssh/authorized_keys` |
 | `cd: No such file or directory` | `EC2_APP_DIR` does not match the real path on the instance |
 | `git fetch` fails | EC2 cannot authenticate to GitHub (private repo / no deploy key) |
-| Missing `.env` | Create `.env` once on the server; CD does not create secrets for you |
+| Missing `.env` | Fixed in `deploy.sh` (copies from `.env.example`). Or create once: `cp .env.example .env` on EC2 |
 | Build works, site old | Deploy failed after build — check the `deploy` job logs |
 
 ### Security notes for this learning setup

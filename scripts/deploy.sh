@@ -5,8 +5,13 @@ set -euo pipefail
 echo "==> Working directory: $(pwd)"
 
 if [[ ! -f .env ]]; then
-  echo "Missing .env — copy from .env.example and set secrets before deploying."
-  exit 1
+  if [[ ! -f .env.example ]]; then
+    echo "Missing .env and .env.example — cannot configure the stack."
+    exit 1
+  fi
+  echo "==> No .env found — creating from .env.example"
+  echo "    Edit .env on the server later if you need different credentials."
+  cp .env.example .env
 fi
 
 echo "==> Building and starting stack"
