@@ -17,6 +17,12 @@ if [[ ! -f .env ]]; then
   cp .env.example .env
 fi
 
+# Load DOCKERHUB_USERNAME / IMAGE_TAG for compose image names.
+set -a
+# shellcheck disable=SC1091
+source .env
+set +a
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "==> Docker not found — running scripts/setup-ec2.sh to install prerequisites"
   chmod +x scripts/setup-ec2.sh
@@ -41,8 +47,15 @@ run_docker() {
   fi
 }
 
-echo "==> Building and starting stack"
-run_docker docker compose up --build -d
+if [[ -n "${DOCKERHUB_USERNAME:-}" && "${DOCKERHUB_USERNAME}" != "local" ]]; then
+  echo "==> Pulling images from Docker Hub (user: ${DOCKERHUB_USERNAME}, tag: ${IMAGE_TAG:-latest})"
+  run_docker docker compose pull backend frontend
+  echo "==> Starting stack from pulled images"
+  run_docker docker compose up -d --no-build
+else
+  echo "==> DOCKERHUB_USERNAME not set — building images on this host"
+  run_docker docker compose up --build -d
+fi
 
 echo "==> Waiting for containers to report healthy"
 deadline=$((SECONDS + 180))

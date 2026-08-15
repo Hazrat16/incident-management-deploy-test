@@ -57,10 +57,10 @@ In a real production environment, secrets would typically come from a secrets ma
 
 ## Limitations and future improvements
 
-- No TLS termination in this local lab (suitable for training, not public production)
+- Images are built in GitHub Actions and stored on Docker Hub; EC2 pulls them when `DOCKERHUB_USERNAME` is set in `.env`
 - No resource limits or Compose profiles yet (optional: Adminer under a profile, CPU/memory limits)
-- Images are built on the EC2 host during deploy (not pulled from a registry); a registry-based CD flow is a natural next step
 - No lockfiles in the repo, so `npm install` is used instead of `npm ci`; adding lockfiles would improve build reproducibility
+- No TLS termination in this local lab (suitable for training, not public production)
 
 ## Deploy to AWS EC2 (new machine checklist)
 
@@ -252,25 +252,104 @@ docker compose up --build -d    # rebuild after code changes
 Pipeline file: [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)
 
 ```text
-push/PR to main  -->  GitHub Actions builds images (CI)
-push to main     -->  SSH into EC2 --> git sync --> scripts/deploy.sh (CD)
+push/PR to main
+  --> build: Compose validate + image build + Trivy scan
+      (on push to main) push images to Docker Hub (:latest + :sha)
+  --> sonar: SonarCloud / SonarQube analysis
+push to main (after build + sonar succeed)
+  --> SSH into EC2 --> git sync --> scripts/deploy.sh
+      (pull from Docker Hub when DOCKERHUB_USERNAME is set)
 ```
 
 ### What the workflow does
 
 | Event | Job | Behavior |
 | ----- | --- | -------- |
-| Pull request to `main` | `build` | `docker compose config` + `docker compose build` |
-| Push to `main` | `build` then `deploy` | Same build, then SSH deploy |
+| Pull request / push to `main` | `build` | `docker compose config`, `docker compose build`, **Trivy** image scans |
+| Push to `main` only | `build` (push step) | Push backend/frontend images to **Docker Hub** as `:latest` and `:<git-sha>` |
+| Pull request / push to `main` | `sonar` | **SonarQube/SonarCloud** static analysis |
+| Push to `main` | `deploy` | Runs only after `build` **and** `sonar` succeed; SSH deploy to EC2 |
 
 Deploy steps on EC2:
 
 1. `git fetch` + `git reset --hard origin/main`
-2. Run [`scripts/deploy.sh`](scripts/deploy.sh) → `docker compose up --build -d` + health checks
+2. Run [`scripts/deploy.sh`](scripts/deploy.sh):
+   - If `.env` has `DOCKERHUB_USERNAME` → `docker compose pull` + `up -d --no-build`
+   - Otherwise → `docker compose up --build -d` (local build fallback)
 
-### One-time GitHub secrets
+### Trivy (container vulnerability scanning)
 
-This workflow’s `deploy` job uses the GitHub Environment named **`incident-management`** (`environment: incident-management` in the workflow). Secrets must be created for that environment (or as repository secrets — both work once the job references the right place).
+After images are built, CI scans:
+
+- `incident-management-backend:latest`
+- `incident-management-frontend:latest`
+
+Policy used in the workflow:
+
+- Fails the job on **CRITICAL** findings (`exit-code: 1`)
+- `ignore-unfixed: true` (does not fail on issues with no upstream fix yet)
+- Also uploads a SARIF report for the backend image (Security tab), when permissions allow
+
+Tighten later by adding `HIGH` to `severity` once base images are clean enough.
+
+### Docker Hub (store latest images)
+
+CI tags and pushes:
+
+- `{DOCKERHUB_USERNAME}/incident-management-backend:latest`
+- `{DOCKERHUB_USERNAME}/incident-management-frontend:latest`
+- the same two images also tagged with the git commit SHA
+
+**One-time Docker Hub setup**
+
+1. Create a Docker Hub account and (optional) make the two repositories, or allow CI to create them on first push.
+2. Create an Access Token: Docker Hub → Account Settings → Personal access tokens.
+3. Add **repository** secrets (or environment secrets if you also bind the build job later):
+
+| Secret | Purpose |
+| ------ | ------- |
+| `DOCKERHUB_USERNAME` | Your Docker Hub username (also used as the image namespace) |
+| `DOCKERHUB_TOKEN` | Access token (prefer token over account password) |
+
+4. On the EC2 `.env`, set the same username so deploy pulls the right images:
+
+```env
+DOCKERHUB_USERNAME=your-dockerhub-user
+IMAGE_TAG=latest
+```
+
+Public images can be pulled without logging in on EC2. For private Hub repos, run `docker login` once on the instance (or add login to `deploy.sh`).
+
+### SonarQube / SonarCloud (code quality)
+
+Config file: [`sonar-project.properties`](sonar-project.properties)
+
+**Recommended for this lab: [SonarCloud](https://sonarcloud.io)** (hosted SonarQube).
+
+1. Sign in to SonarCloud with GitHub and create/import the repository.
+2. Note your **organization key** and **project key** (often `Owner_repo-name`).
+3. Create a token: **My Account → Security → Generate token**.
+4. In GitHub:
+
+**Repository secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Required | Purpose |
+| ------ | -------- | ------- |
+| `SONAR_TOKEN` | Yes | SonarCloud/SonarQube analysis token |
+| `SONAR_HOST_URL` | No | Defaults to `https://sonarcloud.io`. Set only for self-hosted SonarQube (e.g. `https://sonar.example.com`) |
+
+**Repository variables** (Settings → Secrets and variables → Actions → Variables):
+
+| Variable | Required | Purpose |
+| -------- | -------- | ------- |
+| `SONAR_ORGANIZATION` | Recommended | SonarCloud org key (defaults to GitHub owner login if unset) |
+| `SONAR_PROJECT_KEY` | Recommended | Must match the SonarCloud project key (defaults to `Owner_repo`) |
+
+If organization/project key casing does not match SonarCloud exactly, set the variables explicitly.
+
+### One-time GitHub secrets (deploy)
+
+The `deploy` job uses the GitHub Environment named **`incident-management`** (`environment: incident-management` in the workflow). Secrets must be created for that environment (or as repository secrets — both work once the job references the right place).
 
 **Settings → Secrets and variables → Actions**
 
@@ -328,7 +407,7 @@ git commit -m "Add GitHub Actions CI/CD"
 git push origin main
 ```
 
-Then open **GitHub → Actions** and watch **CI/CD**. The `deploy` job runs only after `build` succeeds on `main`.
+Then open **GitHub → Actions** and watch **CI/CD**. The `deploy` job runs only after **`build` and `sonar`** succeed on `main`.
 
 ### Verify after CD
 

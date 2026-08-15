@@ -20,6 +20,7 @@ services:
       start_period: 10s
 
   backend:
+    image: ${DOCKERHUB_USERNAME:-local}/incident-management-backend:${IMAGE_TAG:-latest}
     build:
       context: ./backend
     restart: unless-stopped
@@ -50,6 +51,7 @@ services:
       start_period: 20s
 
   frontend:
+    image: ${DOCKERHUB_USERNAME:-local}/incident-management-frontend:${IMAGE_TAG:-latest}
     build:
       context: ./frontend
     restart: unless-stopped
