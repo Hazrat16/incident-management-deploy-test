@@ -35,6 +35,21 @@ docker compose up --build
 
 Then open [http://localhost:3000](http://localhost:3000). The backend health endpoint is also available at [http://localhost:5000/health](http://localhost:5000/health).
 
+**Compose variants (bonus):**
+
+```bash
+# Default / assignment path (base file only)
+docker compose up --build
+
+# Development overlay (publishes Postgres; optional Adminer)
+docker compose -f compose.yaml -f compose.dev.yaml up --build
+docker compose -f compose.yaml -f compose.dev.yaml --profile tools up --build
+# Adminer: http://localhost:8080  (system: PostgreSQL, server: database)
+
+# Production overlay (stricter restart + resource posture)
+docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+```
+
 Useful commands:
 
 ```bash

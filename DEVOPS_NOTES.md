@@ -59,9 +59,33 @@ In a real production environment, secrets would typically come from a secrets ma
 
 - Images are built in GitHub Actions and stored on Docker Hub; EC2 pulls them when `DOCKERHUB_USERNAME` is set in `.env`
 - Backend runtime image removes `npm`/`npx` and runs `node src/server.js` directly; `overrides.tar` pins CVE-2026-59873
-- No resource limits or Compose profiles yet (optional: Adminer under a profile, CPU/memory limits)
 - No lockfiles in the repo, so `npm install` is used instead of `npm ci`; adding lockfiles would improve build reproducibility
 - No TLS termination in this local lab (suitable for training, not public production)
+
+## Compose variants, resource limits, and Adminer (assignment bonuses)
+
+| File | Role |
+| ---- | ---- |
+| [`compose.yaml`](compose.yaml) | Base stack (frontend, backend, database) + resource limits + Adminer under profile `tools` |
+| [`compose.dev.yaml`](compose.dev.yaml) | Dev overlay: publish Postgres (`5432`), looser limits |
+| [`compose.prod.yaml`](compose.prod.yaml) | Prod overlay: `restart: always`, tighter reservations, `pull_policy: missing` |
+
+```bash
+# Base (also satisfies: docker compose up --build)
+docker compose up --build
+
+# Development + Adminer
+docker compose -f compose.yaml -f compose.dev.yaml --profile tools up --build
+
+# Production-oriented
+docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+```
+
+**Adminer** (profile `tools`): http://localhost:8080 — System `PostgreSQL`, Server `database`, credentials from `.env`.
+
+**Resource limits** are set via Compose `deploy.resources` on each service (CPU + memory limits and reservations).
+
+**Trivy** image scanning and **versioned Docker Hub pushes** (`:latest` + `:<git-sha>`) are handled in [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml).
 
 ## Deploy to AWS EC2 (new machine checklist)
 

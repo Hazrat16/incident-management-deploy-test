@@ -1,0 +1,44 @@
+# Production overlay.
+# Usage:
+#   docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+#
+# Prefer pulling pre-built images from Docker Hub when DOCKERHUB_USERNAME is set.
+# Tighter restart policy; do not publish PostgreSQL to the host.
+
+services:
+  database:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  backend:
+    restart: always
+    pull_policy: missing
+    environment:
+      NODE_ENV: production
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+
+  frontend:
+    restart: always
+    pull_policy: missing
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 128M
+        reservations:
+          cpus: "0.10"
+          memory: 64M

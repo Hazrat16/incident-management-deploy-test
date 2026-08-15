@@ -1,0 +1,47 @@
+# Development overlay.
+# Usage:
+#   docker compose -f compose.yaml -f compose.dev.yaml up --build
+#   docker compose -f compose.yaml -f compose.dev.yaml --profile tools up --build
+#
+# Publishes Postgres for local DB clients and loosens resource limits.
+# Start Adminer with: --profile tools  →  http://localhost:8080
+
+services:
+  database:
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+
+  backend:
+    environment:
+      NODE_ENV: development
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.10"
+          memory: 64M
+
+  frontend:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+        reservations:
+          cpus: "0.10"
+          memory: 32M
+
+  adminer:
+    profiles: ["tools"]
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
