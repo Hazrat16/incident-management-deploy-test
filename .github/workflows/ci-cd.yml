@@ -29,6 +29,7 @@ jobs:
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment: incident-management
     steps:
       - name: Check required secrets
         env:

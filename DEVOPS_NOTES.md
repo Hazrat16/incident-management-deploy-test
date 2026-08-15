@@ -270,7 +270,12 @@ Deploy steps on EC2:
 
 ### One-time GitHub secrets
 
-In the GitHub repo: **Settings → Secrets and variables → Actions → New repository secret**
+This workflow’s `deploy` job uses the GitHub Environment named **`incident-management`** (`environment: incident-management` in the workflow). Secrets must be created for that environment (or as repository secrets — both work once the job references the right place).
+
+**Settings → Secrets and variables → Actions**
+
+- If you use an Environment: open Environment `incident-management` → **Add environment secret**
+- Or use **New repository secret** (then you can remove `environment:` from the workflow)
 
 | Secret | Example | Purpose |
 | ------ | ------- | ------- |
@@ -288,6 +293,8 @@ Paste the **entire** private key into `EC2_SSH_KEY`, including:
 ```
 
 Use a dedicated deploy key pair if possible (not your only laptop key).
+
+If the job reports missing secrets but you can see them in the UI, check the **Environment** column: environment secrets are invisible to jobs that do not declare `environment: <name>`.
 
 ### One-time EC2 preparation for CD
 
