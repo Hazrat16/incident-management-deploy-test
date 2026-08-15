@@ -59,12 +59,35 @@ In a real production environment, secrets would typically come from a secrets ma
 
 - No TLS termination in this local lab (suitable for training, not public production)
 - No resource limits or Compose profiles yet (optional: Adminer under a profile, CPU/memory limits)
-- No CI pipeline or image vulnerability scanning yet (optional: GitHub Actions + Trivy)
+- Images are built on the EC2 host during deploy (not pulled from a registry); a registry-based CD flow is a natural next step
 - No lockfiles in the repo, so `npm install` is used instead of `npm ci`; adding lockfiles would improve build reproducibility
 
 ## Deploy to AWS EC2 (new machine checklist)
 
 This section is enough to take a fresh Ubuntu EC2 instance from zero to a running app.
+
+### Fast path (recommended)
+
+On the EC2 instance, after the repo is present:
+
+```bash
+git clone https://github.com/YOUR_USER/YOUR_REPO.git
+cd YOUR_REPO
+chmod +x scripts/setup-ec2.sh
+./scripts/setup-ec2.sh
+```
+
+[`scripts/setup-ec2.sh`](scripts/setup-ec2.sh) only installs prerequisites: base packages, Docker Engine, Compose plugin, starts the Docker daemon, adds your user to the `docker` group, and creates `.env` from `.env.example` when missing. It does **not** start the stack.
+
+Then:
+
+```bash
+newgrp docker   # or log out and SSH back in
+nano .env       # optional: set strong passwords
+docker compose up --build -d
+```
+
+The numbered steps below are the same install work, written out manually.
 
 ### 1. Launch the instance (AWS console)
 
@@ -223,3 +246,107 @@ docker compose up --build -d    # rebuild after code changes
 
 - The app listens on host port **3000** (`FRONTEND_PORT` → container `80`). To serve on port 80 instead, open `80` in the security group and set `FRONTEND_PORT=80` in `.env`.
 - This is a training-friendly Compose deploy on one VM. Production hardening would add HTTPS (Caddy/nginx + Let’s Encrypt or an ALB), managed secrets, backups, and preferably a managed database (RDS) instead of Postgres on the same instance.
+
+## CI/CD with GitHub Actions (build + deploy to EC2)
+
+Pipeline file: [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)
+
+```text
+push/PR to main  -->  GitHub Actions builds images (CI)
+push to main     -->  SSH into EC2 --> git sync --> scripts/deploy.sh (CD)
+```
+
+### What the workflow does
+
+| Event | Job | Behavior |
+| ----- | --- | -------- |
+| Pull request to `main` | `build` | `docker compose config` + `docker compose build` |
+| Push to `main` | `build` then `deploy` | Same build, then SSH deploy |
+
+Deploy steps on EC2:
+
+1. `git fetch` + `git reset --hard origin/main`
+2. Run [`scripts/deploy.sh`](scripts/deploy.sh) → `docker compose up --build -d` + health checks
+
+### One-time GitHub secrets
+
+In the GitHub repo: **Settings → Secrets and variables → Actions → New repository secret**
+
+| Secret | Example | Purpose |
+| ------ | ------- | ------- |
+| `EC2_HOST` | `54.x.x.x` or Elastic IP | Public hostname/IP of the instance |
+| `EC2_USER` | `ubuntu` | SSH user |
+| `EC2_SSH_KEY` | full PEM private key contents | Private key that can SSH as `EC2_USER` |
+| `EC2_APP_DIR` | `/home/ubuntu/incident-management-deploy-test` | Absolute path to the app clone on EC2 |
+
+Paste the **entire** private key into `EC2_SSH_KEY`, including:
+
+```text
+-----BEGIN OPENSSH PRIVATE KEY-----
+...
+-----END OPENSSH PRIVATE KEY-----
+```
+
+Use a dedicated deploy key pair if possible (not your only laptop key).
+
+### One-time EC2 preparation for CD
+
+1. App already cloned and running (follow the EC2 checklist above), with a working `.env`.
+2. The clone must be a **git** repo that can pull `main`:
+
+```bash
+cd /home/ubuntu/incident-management-deploy-test
+git remote -v
+git status
+```
+
+3. If the GitHub repo is **private**, configure pull access on EC2 (pick one):
+   - HTTPS + personal access token stored in the remote URL, or
+   - SSH deploy key added to the GitHub repo with read access, and `git remote set-url origin git@github.com:ORG/REPO.git`
+4. Security group: GitHub-hosted runners use changing IPs. For this lab, either:
+   - Allow SSH (`22`) from `0.0.0.0/0` temporarily (simple, less secure), or
+   - Restrict SSH to your IP for manual deploys and tighten later (self-hosted runner / SSM / fixed egress).
+5. Confirm the SSH key in `EC2_SSH_KEY` can log in:
+
+```bash
+# from your laptop, with the same private key you will upload as the secret
+ssh -i deploy-key.pem ubuntu@YOUR_EC2_PUBLIC_IP
+```
+
+### Trigger a deploy
+
+```bash
+git add .
+git commit -m "Add GitHub Actions CI/CD"
+git push origin main
+```
+
+Then open **GitHub → Actions** and watch **CI/CD**. The `deploy` job runs only after `build` succeeds on `main`.
+
+### Verify after CD
+
+```bash
+# on EC2
+docker compose ps
+curl http://127.0.0.1:5000/health
+```
+
+Browser: `http://YOUR_EC2_PUBLIC_IP:3000`
+
+### Troubleshooting CD
+
+| Symptom | Likely cause |
+| ------- | ------------ |
+| Deploy job: connection refused / timeout | Security group blocks SSH from GitHub runners |
+| Permission denied (publickey) | Wrong `EC2_SSH_KEY` / user, or key not in `~/.ssh/authorized_keys` |
+| `cd: No such file or directory` | `EC2_APP_DIR` does not match the real path on the instance |
+| `git fetch` fails | EC2 cannot authenticate to GitHub (private repo / no deploy key) |
+| Missing `.env` | Create `.env` once on the server; CD does not create secrets for you |
+| Build works, site old | Deploy failed after build — check the `deploy` job logs |
+
+### Security notes for this learning setup
+
+- Prefer a **dedicated** SSH key for Actions, stored only as a GitHub secret.
+- Do not commit `.env`, PEM files, or tokens.
+- Opening SSH to the world is acceptable only as a short-term lab shortcut; lock it down when you move beyond learning.
+- Next hardening step: build once in CI, push images to GHCR/Docker Hub, and have EC2 **pull** tagged images instead of rebuilding on the VM.
